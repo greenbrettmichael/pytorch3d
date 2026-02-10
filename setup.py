@@ -12,9 +12,14 @@ import sys
 import warnings
 from typing import List, Optional
 
-import torch
 from setuptools import find_packages, setup
-from torch.utils.cpp_extension import CppExtension, CUDA_HOME, CUDAExtension
+
+try:
+    import torch
+    from torch.utils.cpp_extension import CppExtension, CUDA_HOME, CUDAExtension
+except ModuleNotFoundError:
+    torch = None
+    CppExtension = CUDA_HOME = CUDAExtension = None
 
 
 def get_existing_ccbin(nvcc_args: List[str]) -> Optional[str]:
@@ -36,6 +41,8 @@ def get_existing_ccbin(nvcc_args: List[str]) -> Optional[str]:
 
 
 def get_extensions():
+    if torch is None:
+        return []
     no_extension = os.getenv("PYTORCH3D_NO_EXTENSION", "0") == "1"
     if no_extension:
         msg = "SKIPPING EXTENSION BUILD. PYTORCH3D WILL NOT WORK!"
@@ -145,14 +152,17 @@ def get_extensions():
 __version__ = runpy.run_path("pytorch3d/__init__.py")["__version__"]
 
 
-if os.getenv("PYTORCH3D_NO_NINJA", "0") == "1":
+if torch is not None:
+    if os.getenv("PYTORCH3D_NO_NINJA", "0") == "1":
 
-    class BuildExtension(torch.utils.cpp_extension.BuildExtension):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, use_ninja=False, **kwargs)
+        class BuildExtension(torch.utils.cpp_extension.BuildExtension):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, use_ninja=False, **kwargs)
 
+    else:
+        BuildExtension = torch.utils.cpp_extension.BuildExtension
 else:
-    BuildExtension = torch.utils.cpp_extension.BuildExtension
+    BuildExtension = None
 
 trainer = "pytorch3d.implicitron_trainer"
 
@@ -189,7 +199,7 @@ setup(
         ]
     },
     ext_modules=get_extensions(),
-    cmdclass={"build_ext": BuildExtension},
+    cmdclass={"build_ext": BuildExtension} if BuildExtension is not None else {},
     package_data={
         "": ["*.json"],
     },
